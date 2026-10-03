@@ -1288,6 +1288,33 @@ window-save-state = always
 }
 
 #[test]
+fn ghostty_background_blur_accepts_ghostty_values_and_keeps_source() -> Result {
+    let fixture = Fixture::new()?;
+    for (source, expected) in [
+        ("background-blur = true\n", 20),
+        ("background-blur =\n", 20),
+        ("background-blur\n", 20),
+        ("background-blur = macos-glass-clear\n", 20),
+        ("background-blur = false\n", 0),
+        ("background-blur = 45\n", 45),
+    ] {
+        let path = fixture.write("ghostty.conf", source)?;
+        let settings = TerminalSettings::load_with_seed(&path, None)?;
+        assert_eq!(settings.options.background_blur, expected, "{source}");
+        assert!(settings.diagnostics.is_empty(), "{source}");
+        assert_eq!(settings.save(&path)?.options.background_blur, expected);
+        assert_eq!(fs::read_to_string(&path)?, source, "{source}");
+    }
+    let path = fixture.write("ghostty.conf", "background-blur = loud\n")?;
+    let error = TerminalSettings::load_with_seed(&path, None)
+        .err()
+        .ok_or("accepted an invalid background-blur")?
+        .to_string();
+    assert!(error.contains("background-blur"), "{error}");
+    Ok(())
+}
+
+#[test]
 fn terminal_standard_actions_round_trip_and_respect_overrides() -> Result {
     use muxy_app_core::settings::TerminalAction;
     let fixture = Fixture::new()?;

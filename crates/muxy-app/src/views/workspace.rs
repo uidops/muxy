@@ -530,6 +530,8 @@ impl Render for AppModel {
         self.sync_project_logos(window, cx);
         #[cfg(all(target_os = "macos", not(test)))]
         self.sync_sidebar_vibrancy(window);
+        #[cfg(all(target_os = "macos", not(test)))]
+        self.sync_window_blur(window);
         self.sync_toast(cx);
         let theme = &self.theme;
         let tab_focused = self.appearance.layout == muxy_app_core::settings::AppLayout::TabFocused

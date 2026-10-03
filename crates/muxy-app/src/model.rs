@@ -143,6 +143,8 @@ pub(crate) struct AppModel {
     pub(crate) window_drag: Option<muxy_ui::window_drag::WindowDrag>,
     #[cfg(target_os = "macos")]
     pub(crate) sidebar_vibrancy: Option<muxy_ui::vibrancy::SidebarVibrancy>,
+    #[cfg(all(target_os = "macos", not(test)))]
+    pub(crate) window_blur: Option<muxy_ui::vibrancy::WindowBlur>,
     pub(crate) overlay_subscription: Option<Subscription>,
     pub(crate) picker_search: crate::picker::search::SearchService,
     pub(crate) navigation: crate::navigation::Navigation,
@@ -238,6 +240,34 @@ impl AppModel {
             });
         }
         cx.notify();
+    }
+
+    /// Ghostty only blurs a background that can show through, so the effect is
+    /// requested only when `background-blur` is set and some transparency is
+    /// configured alongside it.
+    pub(crate) fn window_blur_enabled(options: &muxy_app_core::settings::TerminalOptions) -> bool {
+        let transparent = options
+            .background_opacity
+            .is_some_and(|opacity| opacity < 1.0)
+            || options.background_opacity_cells;
+        options.background_blur > 0 && transparent
+    }
+
+    /// Installs or refreshes the native backdrop behind the window. GPUI's own
+    /// `Blurred` appearance blends within the window, so it never blurs the
+    /// desktop; this uses a behind-window effect view instead.
+    #[cfg(all(target_os = "macos", not(test)))]
+    pub(crate) fn sync_window_blur(&mut self, window: &Window) {
+        if !Self::window_blur_enabled(&self.terminal.options) {
+            self.window_blur = None;
+            return;
+        }
+        let background = self.theme.bg;
+        if let Some(effect) = &mut self.window_blur {
+            effect.set_appearance(background);
+        } else {
+            self.window_blur = muxy_ui::vibrancy::WindowBlur::new(window, background);
+        }
     }
 
     pub(crate) fn reload_configuration(&mut self, cx: &mut Context<Self>) {
@@ -508,6 +538,8 @@ impl AppModel {
             window_drag: muxy_ui::window_drag::WindowDrag::new(&window.window_title()),
             #[cfg(target_os = "macos")]
             sidebar_vibrancy: None,
+            #[cfg(all(target_os = "macos", not(test)))]
+            window_blur: None,
             overlay_subscription: None,
             picker_search: crate::picker::search::SearchService::default(),
             navigation: crate::navigation::Navigation::default(),
@@ -2527,6 +2559,25 @@ mod tests {
             },
             requests,
         )
+    }
+
+    #[test]
+    fn window_blur_is_enabled_only_when_the_background_shows_through() {
+        use muxy_app_core::settings::TerminalOptions;
+        let mut options = TerminalOptions::default();
+        assert!(!AppModel::window_blur_enabled(&options));
+        options.background_blur = 45;
+        assert!(!AppModel::window_blur_enabled(&options));
+        options.background_opacity = Some(0.8);
+        assert!(AppModel::window_blur_enabled(&options));
+        options.background_blur = 0;
+        assert!(!AppModel::window_blur_enabled(&options));
+        options.background_blur = 20;
+        options.background_opacity = Some(1.0);
+        assert!(!AppModel::window_blur_enabled(&options));
+        options.background_opacity = None;
+        options.background_opacity_cells = true;
+        assert!(AppModel::window_blur_enabled(&options));
     }
 
     #[gpui::test]

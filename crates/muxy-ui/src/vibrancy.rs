@@ -76,6 +76,59 @@ impl Drop for SidebarVibrancy {
     }
 }
 
+/// A native backdrop that blurs whatever shows through the whole window.
+#[derive(Debug)]
+pub struct WindowBlur {
+    view: Retained<NSVisualEffectView>,
+    appearance: Appearance,
+}
+
+impl WindowBlur {
+    pub fn new(window: &Window, background: Hsla) -> Option<Self> {
+        let mtm = MainThreadMarker::new()?;
+        let handle = HasWindowHandle::window_handle(window).ok()?;
+        let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+            return None;
+        };
+        // SAFETY: GPUI lends its live AppKit view on the main thread.
+        let gpui_view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+        // SAFETY: This is GPUI's live main-thread view. Install the effect as a
+        // sibling below it so the Metal surface and input handling stay on top.
+        let content = unsafe { gpui_view.superview() }?;
+        let frame = NSRect::new(NSPoint::ZERO, content.bounds().size);
+        let view = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), frame);
+        let appearance = appearance(background);
+        view.setAppearance(native_appearance(appearance).as_deref());
+        view.setMaterial(NSVisualEffectMaterial::Sidebar);
+        view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+        view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
+        content.addSubview_positioned_relativeTo(
+            &view,
+            NSWindowOrderingMode::Below,
+            Some(gpui_view),
+        );
+        Some(Self { view, appearance })
+    }
+
+    pub fn set_appearance(&mut self, background: Hsla) {
+        let appearance = appearance(background);
+        if self.appearance != appearance {
+            self.appearance = appearance;
+            self.view
+                .setAppearance(native_appearance(appearance).as_deref());
+        }
+    }
+}
+
+impl Drop for WindowBlur {
+    fn drop(&mut self) {
+        self.view.removeFromSuperview();
+    }
+}
+
 fn appearance(background: Hsla) -> Appearance {
     if background.l < 0.5 {
         Appearance::Dark

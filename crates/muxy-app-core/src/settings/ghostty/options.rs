@@ -18,6 +18,7 @@ pub(super) const KEYS: &[&str] = &[
     "selection-clear-on-copy",
     "background-opacity",
     "background-opacity-cells",
+    "background-blur",
     "bold-is-bright",
     "copy-on-select",
     "mouse-reporting",
@@ -72,6 +73,8 @@ pub struct TerminalOptions {
     pub selection_clear_on_copy: bool,
     pub background_opacity: Option<f32>,
     pub background_opacity_cells: bool,
+    /// Blur intensity requested by `background-blur`; `0` means disabled.
+    pub background_blur: u8,
     pub bold_is_bright: bool,
     pub copy_on_select: Option<bool>,
     pub mouse_reporting: bool,
@@ -103,6 +106,7 @@ impl Default for TerminalOptions {
             selection_clear_on_copy: false,
             background_opacity: None,
             background_opacity_cells: false,
+            background_blur: 0,
             bold_is_bright: false,
             copy_on_select: None,
             mouse_reporting: true,
@@ -185,6 +189,7 @@ impl TerminalOptions {
                 "background-opacity-cells",
                 self.background_opacity_cells.to_string(),
             ),
+            ("background-blur", self.background_blur.to_string()),
             ("bold-is-bright", self.bold_is_bright.to_string()),
             (
                 "copy-on-select",
@@ -244,6 +249,7 @@ impl TerminalOptions {
                 | "selection-clear-on-typing"
                 | "selection-clear-on-copy"
                 | "background-opacity-cells"
+                | "background-blur"
                 | "bold-is-bright"
                 | "copy-on-select"
                 | "mouse-reporting"
@@ -306,6 +312,7 @@ impl TerminalOptions {
                     optional(value, |value| Ok(number(value)?.clamp(0.0, 1.0)))?;
             }
             "background-opacity-cells" => self.background_opacity_cells = boolean(value, false)?,
+            "background-blur" => self.background_blur = blur(value)?,
             "bold-is-bright" => self.bold_is_bright = boolean(value, false)?,
             "copy-on-select" => {
                 self.copy_on_select = optional(value, |value| {
@@ -403,6 +410,22 @@ fn boolean(value: &str, default: bool) -> Result<bool> {
         Ok(default)
     } else {
         value.parse().map_err(|error| Error::new("boolean", error))
+    }
+}
+
+/// Ghostty's `background-blur` takes `true` (its default intensity of 20),
+/// `false`, or a nonnegative intensity. Muxy only needs the intensity to know
+/// whether blur is requested, and the macOS glass values imply a blur too.
+fn blur(value: &str) -> Result<u8> {
+    match value {
+        "false" => Ok(0),
+        "" | "true" | "macos-glass-regular" | "macos-glass-clear" => Ok(20),
+        _ => value.parse().map_err(|error| {
+            Error::new(
+                "background-blur",
+                format!("{error}; expected true, false, or an integer from 0 to 255"),
+            )
+        }),
     }
 }
 
